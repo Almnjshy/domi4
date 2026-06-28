@@ -83,7 +83,7 @@ class DominoAIEngine @Inject constructor() {
         player: Player
     ): AIMove {
         return moves.maxByOrNull { move ->
-            minimaxScore(state, move, depth = 2, maximizing = true)
+            minimaxScore(state, move, depth = 2, maximizing = true, player = player)
         } ?: moves.first()
     }
 
@@ -95,26 +95,27 @@ class DominoAIEngine @Inject constructor() {
         state: GameState,
         move: AIMove,
         depth: Int,
-        maximizing: Boolean
+        maximizing: Boolean,
+        player: Player
     ): Float {
-        // Simulate playing this move
-        val simulatedHand = state.currentPlayer?.hand?.filter { it.id != move.tile.id } ?: return 0f
+        // Simulate playing this move for the given player
+        val simulatedHand = player.hand.filter { it.id != move.tile.id }
         val simulatedBoard = state.board.place(move.tile, move.side)
 
         // Base score: tiles played + future options
         val futureOptions = simulatedHand.count { simulatedBoard.getLegalSides(it).isNotEmpty() }
-        val baseScore = heuristicScore(move, state, state.currentPlayer!!) + futureOptions * 1.5f
+        val baseScore = heuristicScore(move, state, player) + futureOptions * 1.5f
 
         if (depth <= 0) return baseScore
 
         // Estimate opponent response using visible game state
-        val opponents = state.players.filter { it.id != state.currentPlayerIndex }
+        val opponents = state.players.filter { it.id != player.id }
         val opponentThreat = opponents.maxOfOrNull { opp ->
             opp.hand.count { simulatedBoard.getLegalSides(it).isNotEmpty() }.toFloat()
         } ?: 0f
 
         // probability bonus: prefer ends with fewer remaining tiles in stock
-        val probabilityBonus = probabilityFromState(move.tile, state)
+        val probabilityBonus = probabilityFromState(move.tile, state, player)
 
         return baseScore - opponentThreat * 1.2f + probabilityBonus
     }
@@ -136,7 +137,7 @@ class DominoAIEngine @Inject constructor() {
 
         // Prefer moves that block opponents
         val remainingHand = player.hand.filter { it.id != move.tile.id }
-        if (blocksOpponents(move, state)) score += 7f
+        if (blocksOpponents(move, state, player)) score += 7f
 
         // Prefer moves that leave good options in remaining hand
         val boardAfter = state.board.place(move.tile, move.side)
@@ -157,9 +158,9 @@ class DominoAIEngine @Inject constructor() {
      * Counts how many tiles with these values remain in stock/opponent hands
      * (deduced from what's on the board + our hand).
      */
-    private fun probabilityFromState(tile: DominoTile, state: GameState): Float {
+    private fun probabilityFromState(tile: DominoTile, state: GameState, player: Player): Float {
         val boardTileIds = state.board.tiles.map { it.tile.id }.toSet()
-        val myHandIds = state.currentPlayer?.hand?.map { it.id }?.toSet() ?: emptySet()
+        val myHandIds = player.hand.map { it.id }.toSet()
         val knownIds = boardTileIds + myHandIds
 
         // For each end value, how many tiles are "unknown" (in stock or opponent hand)?
@@ -179,9 +180,9 @@ class DominoAIEngine @Inject constructor() {
         return if (tile.total <= 6) 1f else -riskPenalty
     }
 
-    private fun blocksOpponents(move: AIMove, state: GameState): Boolean {
+    private fun blocksOpponents(move: AIMove, state: GameState, player: Player): Boolean {
         val boardAfter = state.board.place(move.tile, move.side)
-        val opponents = state.players.filter { it.id != state.currentPlayerIndex }
+        val opponents = state.players.filter { it.id != player.id }
         return opponents.isNotEmpty() &&
                opponents.all { opp -> opp.hand.all { boardAfter.getLegalSides(it).isEmpty() } }
     }
