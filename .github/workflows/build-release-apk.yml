@@ -1,0 +1,72 @@
+name: Build Release APK
+
+on:
+  push:
+    branches: [ main, fix/ci-release-apk ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        id: setup-java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK command-line tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends unzip wget
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip -d cmdline-tools
+          mv cmdline-tools/cmdline-tools cmdline-tools/latest || true
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Decode keystore (if provided)
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding provided keystore"
+            echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+          else
+            echo "No KEYSTORE_BASE64 secret provided; skipping release signing setup"
+          fi
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build APK (release if keystore present, otherwise debug)
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Building release (keystore provided)"
+            ./gradlew assembleRelease -PSIGNING_STORE_FILE=release.keystore -PSIGNING_STORE_PASSWORD="$SIGNING_STORE_PASSWORD" -PSIGNING_KEY_ALIAS="$SIGNING_KEY_ALIAS" -PSIGNING_KEY_PASSWORD="$SIGNING_KEY_PASSWORD" --no-daemon --stacktrace
+          else
+            echo "No keystore found — building debug APK"
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-apks
+          path: app/build/outputs/apk/**/**/*.apk

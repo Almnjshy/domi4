@@ -1,7 +1,6 @@
 package com.agon.app.data.network
 
 import com.agon.app.domain.model.*
-import com.agon.app.domain.model.BoardState
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -65,7 +64,8 @@ object GameStateSerializer {
     }
 
     private fun boardFromJson(obj: JSONObject): BoardState {
-        val tiles = mutableListOf<PlacedTile>()
+        // Use BoardState.PlacedTile explicitly to avoid any naming collision
+        val tiles = mutableListOf<BoardState.PlacedTile>()
         val arr = obj.getJSONArray("tiles")
         for (i in 0 until arr.length()) {
             val t = arr.getJSONObject(i)
@@ -185,7 +185,7 @@ object GameActionSerializer {
         when (obj.getString("type")) {
             "PLAY_TILE" -> GameAction.PlayTile(
                 playerId = obj.getInt("playerId"),
-                tile = DominoTile(obj.getInt("tileTop"), obj.getInt("tileBot"), obj.getInt("tileId")),
+                tile = DominoTile(obj.getInt("tileId"), obj.getInt("tileTop"), obj.getInt("tileBot")),
                 side = BoardSide.valueOf(obj.getString("side"))
             )
             "DRAW" -> GameAction.DrawTile(obj.getInt("playerId"), null)
