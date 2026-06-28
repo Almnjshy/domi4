@@ -19,6 +19,19 @@ android {
         testInstrumentationRunner = "com.agon.app.HiltTestRunner"
     }
 
+    // Read signing properties from project properties (passed via -P in CI)
+    signingConfigs {
+        create("release") {
+            val storeFilePath = (project.findProperty("SIGNING_STORE_FILE") as String?)
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+            }
+            storePassword = (project.findProperty("SIGNING_STORE_PASSWORD") as String?) ?: ""
+            keyAlias = (project.findProperty("SIGNING_KEY_ALIAS") as String?) ?: ""
+            keyPassword = (project.findProperty("SIGNING_KEY_PASSWORD") as String?) ?: ""
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -26,6 +39,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Use signing config if provided
+            signingConfig = signingConfigs.findByName("release")
         }
         debug {
             isDebuggable = true
